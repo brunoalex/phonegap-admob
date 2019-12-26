@@ -1,22 +1,4 @@
-Skip to content
-Search or jump to…
 
-Pull requests
-Issues
-Marketplace
-Explore
- 
-@brunoalex 
-0
-090brunoalex/admob-google-cordova-clean
-forked from jamesfdickinson/admob-google-cordova-clean
- Code Pull requests 0 Actions Projects 0 Wiki Security Insights Settings
-admob-google-cordova-clean/src/android/AdMobAds.java
-@jamesfdickinson jamesfdickinson fix android interstitial ads missing publisher id
-466f7c1 on 1 Oct
-@miqmago@kkleokrish@jamesfdickinson
-835 lines (722 sloc)  31.3 KB
-  
 /*
  AdMobAds.java
  Copyright 2015 AppFeel. All rights reserved.
@@ -848,15 +830,3 @@ public class AdMobAds extends CordovaPlugin {
         }
     }
 }
-© 2019 GitHub, Inc.
-Terms
-Privacy
-Security
-Status
-Help
-Contact GitHub
-Pricing
-API
-Training
-Blog
-About
