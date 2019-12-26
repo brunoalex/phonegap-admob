@@ -1,20 +1,35 @@
+Skip to content
+Search or jump to…
+
+Pull requests
+Issues
+Marketplace
+Explore
+ 
+@brunoalex 
+0
+090brunoalex/admob-google-cordova-clean
+forked from jamesfdickinson/admob-google-cordova-clean
+ Code Pull requests 0 Actions Projects 0 Wiki Security Insights Settings
+admob-google-cordova-clean/src/android/AdMobAds.java
+@jamesfdickinson jamesfdickinson fix android interstitial ads missing publisher id
+466f7c1 on 1 Oct
+@miqmago@kkleokrish@jamesfdickinson
+835 lines (722 sloc)  31.3 KB
+  
 /*
  AdMobAds.java
  Copyright 2015 AppFeel. All rights reserved.
  http://www.appfeel.com
- 
  AdMobAds Cordova Plugin (cordova-admob)
- 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to
  deal in the Software without restriction, including without limitation the
  rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
  sell copies of the Software, and to permit persons to whom the Software is
  furnished to do so, subject to the following conditions:
- 
  The above copyright notice and this permission notice shall be included in
  all copies or substantial portions of the Software.
- 
  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -54,24 +69,22 @@ import android.view.Window;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 
-import com.appfeel.cordova.connectivity.Connectivity;
-import com.appfeel.cordova.connectivity.Connectivity.IConnectivityChange;
+import com.google.android.gms.ads.MobileAds;
 import com.google.android.gms.ads.AdRequest;
 import com.google.android.gms.ads.AdSize;
 import com.google.android.gms.ads.AdView;
 import com.google.android.gms.ads.InterstitialAd;
 import com.google.android.gms.ads.mediation.admob.AdMobExtras;
-import com.google.android.gms.ads.purchase.InAppPurchase;
+import com.google.android.gms.ads.MobileAds;
+import com.google.android.gms.ads.reward.RewardedVideoAd;
 
-public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
+public class AdMobAds extends CordovaPlugin {
     public static final String ADMOBADS_LOGTAG = "AdmMobAds";
     public static final String INTERSTITIAL = "interstitial";
     public static final String BANNER = "banner";
+    public static final String REWARDED = "rewarded";
 
     private static final boolean CORDOVA_4 = Integer.valueOf(CordovaWebView.CORDOVA_VERSION.split("\\.")[0]) >= 4;
-    private static final String DEFAULT_AD_PUBLISHER_ID = "ca-app-pub-9718633180389415~2059902924";
-    private static final String DEFAULT_INTERSTITIAL_PUBLISHER_ID = "ca-app-pub-9718633180389415/2198970897";
-    private static final String DEFAULT_TAPPX_ID = "";
 
     /* Cordova Actions. */
     private static final String ACTION_SET_OPTIONS = "setOptions";
@@ -80,12 +93,16 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
     private static final String ACTION_DESTROY_BANNER_VIEW = "destroyBannerView";
     private static final String ACTION_REQUEST_INTERSTITIAL_AD = "requestInterstitialAd";
     private static final String ACTION_SHOW_INTERSTITIAL_AD = "showInterstitialAd";
+    private static final String ACTION_REQUEST_REWARDED_AD = "requestRewardedAd";
+    private static final String ACTION_SHOW_REWARDED_AD = "showRewardedAd";
     private static final String ACTION_RECORD_RESOLUTION = "recordResolution";
     private static final String ACTION_RECORD_PLAY_BILLING_RESOLUTION = "recordPlayBillingResolution";
 
     /* options */
-    private static final String OPT_PUBLISHER_ID = "publisherId";
+    private static final String OPT_APP_ID = "appId";
+    private static final String OPT_PUBLISHER_ID = "bannerAdId";
     private static final String OPT_INTERSTITIAL_AD_ID = "interstitialAdId";
+    private static final String OPT_REWARDED_AD_ID = "rewardedAdId";
     private static final String OPT_AD_SIZE = "adSize";
     private static final String OPT_BANNER_AT_TOP = "bannerAtTop";
     private static final String OPT_OVERLAP = "overlap";
@@ -94,20 +111,19 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
     private static final String OPT_AD_EXTRAS = "adExtras";
     private static final String OPT_AUTO_SHOW_BANNER = "autoShowBanner";
     private static final String OPT_AUTO_SHOW_INTERSTITIAL = "autoShowInterstitial";
+    private static final String OPT_AUTO_SHOW_REWARDED = "autoShowRewarded";
     private static final String OPT_TAPPX_ID_ANDROID = "tappxIdAndroid";
     private static final String OPT_TAPPX_SHARE = "tappxShare";
     protected boolean isBannerAutoShow = true;
     protected boolean isInterstitialAutoShow = true;
-    private Connectivity connectivity;
-    private AdMobAdsAdListener bannerListener = new AdMobAdsAdListener(BANNER, this, false);
-    private AdMobAdsAdListener interstitialListener = new AdMobAdsAdListener(INTERSTITIAL, this, false);
-    private AdMobAdsAdListener backFillBannerListener = new AdMobAdsAdListener(BANNER, this, true);
-    private AdMobAdsAdListener backFillInterstitialListener = new AdMobAdsAdListener(INTERSTITIAL, this, true);
-    private AdMobAdsAppPurchaseListener inAppPurchaseListener = new AdMobAdsAppPurchaseListener(this);
+    protected boolean isRewardedAutoShow = false;
+    private AdMobAdsAdListener bannerListener = new AdMobAdsAdListener(BANNER, this);
+    private AdMobAdsAdListener interstitialListener = new AdMobAdsAdListener(INTERSTITIAL, this);
+    private AdMobRewardedVideoAdListener rewardedListener = new AdMobRewardedVideoAdListener(REWARDED, this);
+    private boolean isMobileAdsInitialized = false;
     private boolean isInterstitialAvailable = false;
+    private boolean isRewardedAvailable = false;
     private boolean isNetworkActive = false;
-    private boolean isBannerRequested = false;
-    private boolean isInterstitialRequested = false;
     //private View adView;
     //private SearchAdView sadView;
     private ViewGroup parentView;
@@ -123,10 +139,15 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
      * The interstitial ad to display to the user.
      */
     private InterstitialAd interstitialAd;
-    private String publisherId = DEFAULT_AD_PUBLISHER_ID;
-    private String interstitialAdId = DEFAULT_INTERSTITIAL_PUBLISHER_ID;
-    private String tappxId = DEFAULT_TAPPX_ID;
+    private RewardedVideoAd  rewardedAd;
+    private String appId = ""; // App ID from AdMob
+    private String publisherId = "";
+    private String interstitialAdId = "";
+    private String rewardedAdId = "";
+    private String tappxId = "";
     private AdSize adSize = AdSize.SMART_BANNER;
+
+
     /**
      * Whether or not the ad should be positioned at top or bottom of screen.
      */
@@ -140,8 +161,6 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
     private JSONObject adExtras = null;
     private boolean isBannerVisible = false;
     private double tappxShare = 0.5;
-    private boolean isGo2TappxInBannerBackfill = false;
-    private boolean isGo2TappxInIntesrtitialBackfill = false;
     private boolean hasTappx = false;
 
     /**
@@ -208,13 +227,6 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
         }
     }
 
-    @Override
-    public void initialize(CordovaInterface cordova, CordovaWebView webView) {
-        super.initialize(cordova, webView);
-        connectivity = Connectivity.GetInstance(cordova.getActivity(), this);
-        connectivity.observeInternetConnection();
-    }
-
     /**
      * Executes the request.
      * <p/>
@@ -255,17 +267,15 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
         } else if (ACTION_SHOW_INTERSTITIAL_AD.equals(action)) {
             result = executeShowInterstitialAd(callbackContext);
 
-        } else if (ACTION_RECORD_RESOLUTION.equals(action)) {
-            int purchaseId = args.getInt(0);
-            int resolution = args.getInt(1);
-            result = executeRecordResolution(purchaseId, resolution, callbackContext);
+        }
+        else if (ACTION_REQUEST_REWARDED_AD.equals(action)) {
+            JSONObject options = args.optJSONObject(0);
+            result = executeRequestRewardedAd(options, callbackContext);
 
-        } else if (ACTION_RECORD_PLAY_BILLING_RESOLUTION.equals(action)) {
-            int purchaseId = args.getInt(0);
-            int billingResponseCode = args.getInt(1);
-            result = executeRecordPlayBillingResolution(purchaseId, billingResponseCode, callbackContext);
+        } else if (ACTION_SHOW_REWARDED_AD.equals(action)) {
+            result = executeShowRewardedAd(callbackContext);
 
-        } else {
+        }  else {
             Log.d(ADMOBADS_LOGTAG, String.format("Invalid action passed: %s", action));
             return false;
         }
@@ -288,11 +298,17 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
         if (options == null) {
             return;
         }
+        if (options.has(OPT_APP_ID)) {
+            this.appId = options.optString(OPT_APP_ID);
+        }
         if (options.has(OPT_PUBLISHER_ID)) {
             this.publisherId = options.optString(OPT_PUBLISHER_ID);
         }
         if (options.has(OPT_INTERSTITIAL_AD_ID)) {
             this.interstitialAdId = options.optString(OPT_INTERSTITIAL_AD_ID);
+        }
+        if (options.has(OPT_REWARDED_AD_ID)) {
+            this.rewardedAdId = options.optString(OPT_REWARDED_AD_ID);
         }
         if (options.has(OPT_AD_SIZE)) {
             this.adSize = adSizeFromString(options.optString(OPT_AD_SIZE));
@@ -317,6 +333,9 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
         }
         if (options.has(OPT_AUTO_SHOW_INTERSTITIAL)) {
             this.isInterstitialAutoShow = options.optBoolean(OPT_AUTO_SHOW_INTERSTITIAL);
+        }  
+        if (options.has(OPT_AUTO_SHOW_REWARDED)) {
+            this.isRewardedAutoShow = options.optBoolean(OPT_AUTO_SHOW_REWARDED);
         }
         if (options.has(OPT_TAPPX_ID_ANDROID)) {
             this.tappxId = options.optString(OPT_TAPPX_ID_ANDROID);
@@ -327,32 +346,38 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
             hasTappx = true;
         }
     }
+    
+    private void initializeMobileAds() {
+        String __pid = getPublisherId();
+		if(!isMobileAdsInitialized) {
+			MobileAds.initialize(cordova.getActivity(), __pid);
+			isMobileAdsInitialized = true;
+		}
+	}
 
     private PluginResult executeCreateBannerView(JSONObject options, final CallbackContext callbackContext) {
         this.setOptions(options);
-        String __pid = publisherId;
-        try {
-            __pid = (publisherId.length() == 0 ? DEFAULT_AD_PUBLISHER_ID : ((new Random()).nextInt(100) > 2 ? getPublisherId(false) : this.cordova.getActivity().getString(this.cordova.getActivity().getResources().getIdentifier("bid", "string", this.cordova.getActivity().getPackageName()))));
-        } catch (Exception ex) {
-            __pid = DEFAULT_AD_PUBLISHER_ID;
+
+        String __pid = getPublisherId();
+        if (__pid.length() == 0) {
+            return new PluginResult(Status.ERROR, "bannerAdId is missing");
         }
-        isGo2TappxInBannerBackfill = DEFAULT_AD_PUBLISHER_ID.equals(__pid);
+
         final String _pid = __pid;
 
         cordova.getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                isBannerRequested = true;
-                createBannerView(_pid, bannerListener, false);
+                createBannerView(_pid, bannerListener);
                 callbackContext.success();
             }
         });
         return null;
     }
 
-    private void createBannerView(String _pid, AdMobAdsAdListener adListener, boolean isBackFill) {
+    private void createBannerView(String _pid, AdMobAdsAdListener adListener) {
         boolean isTappx = _pid.equals(tappxId);
-
+        initializeMobileAds();
         if (adView != null && !adView.getAdUnitId().equals(_pid)) {
             if (adView.getParent() != null) {
                 ((ViewGroup) adView.getParent()).removeView(adView);
@@ -366,8 +391,7 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
                 if (adSize == AdSize.BANNER) { // 320x50
                     adView.setAdSize(adSize);
                 } else if (adSize == AdSize.MEDIUM_RECTANGLE) { // 300x250
-                    _pid = getPublisherId(isBackFill, false);
-                    isGo2TappxInBannerBackfill = DEFAULT_AD_PUBLISHER_ID.equals(_pid);
+                    _pid = getPublisherId();
                     adView.setAdSize(adSize);
                 } else if (adSize == AdSize.FULL_BANNER) { // 468x60
                     adView.setAdSize(AdSize.BANNER);
@@ -554,7 +578,6 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
                     adView = null;
                 }
                 isBannerVisible = false;
-                isBannerRequested = false;
                 delayCallback.success();
             }
         });
@@ -563,24 +586,20 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
 
     private PluginResult executeCreateInterstitialView(JSONObject options, final CallbackContext callbackContext) {
         this.setOptions(options);
-        String __pid = publisherId;
-        String __iid = interstitialAdId;
-        try {
-            __pid = (publisherId.length() == 0 ? DEFAULT_AD_PUBLISHER_ID : ((new Random()).nextInt(100) > 2 ? getPublisherId(false) : this.cordova.getActivity().getString(this.cordova.getActivity().getResources().getIdentifier("bid", "string", this.cordova.getActivity().getPackageName()))));
-        } catch (Exception ex) {
-            __pid = DEFAULT_AD_PUBLISHER_ID;
+
+        String __iid = getInterstitialId();
+
+        if (__iid.length() == 0) {
+            return new PluginResult(Status.ERROR, "interstitialAdId is missing");
         }
-        try {
-            __iid = (interstitialAdId.length() == 0 ? __pid : (new Random()).nextInt(100) > 2 ? getInterstitialId(false) : this.cordova.getActivity().getString(this.cordova.getActivity().getResources().getIdentifier("iid", "string", this.cordova.getActivity().getPackageName())));
-        } catch (Exception ex) {
-            __iid = DEFAULT_INTERSTITIAL_PUBLISHER_ID;
-        }
-        isGo2TappxInIntesrtitialBackfill = DEFAULT_AD_PUBLISHER_ID.equals(__iid) || DEFAULT_INTERSTITIAL_PUBLISHER_ID.equals(__iid);
+
+
         final String _iid = __iid;
+        
         cordova.getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                isInterstitialRequested = true;
+
                 createInterstitialView(_iid, interstitialListener);
                 callbackContext.success();
             }
@@ -589,9 +608,11 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
     }
 
     private void createInterstitialView(String _iid, AdMobAdsAdListener adListener) {
+        initializeMobileAds();
+
         interstitialAd = new InterstitialAd(cordova.getActivity());
         interstitialAd.setAdUnitId(_iid);
-        interstitialAd.setInAppPurchaseListener(inAppPurchaseListener);
+       
         interstitialAd.setAdListener(adListener);
         interstitialAd.loadAd(buildAdRequest());
     }
@@ -631,7 +652,6 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
             @Override
             public void run() {
                 if (interstitialAd.isLoaded()) {
-                    isInterstitialRequested = false;
                     interstitialAd.show();
                 }
                 if (callbackContext != null) {
@@ -642,50 +662,90 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
         return null;
     }
 
-    private PluginResult executeRecordResolution(final int purchaseId, final int resolution, final CallbackContext callbackContext) {
-        final InAppPurchase purchase = inAppPurchaseListener.getPurchase(purchaseId);
-        if (purchase != null) {
-            cordova.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    Log.d(ADMOBADS_LOGTAG, "AdMobAds.recordResolution: Recording purchase resolution");
-                    purchase.recordResolution(resolution);
-                    inAppPurchaseListener.removePurchase(purchaseId);
+///////////////////Rewarded Ads///////////////////////
 
-                    if (callbackContext != null) {
-                        callbackContext.success();
-                    }
-                }
-            });
+    private PluginResult executeCreateRewardedView(JSONObject options, final CallbackContext callbackContext) {
+        this.setOptions(options);
+        String __iid = getRewardedId();
 
-        } else if (callbackContext != null) {
-            callbackContext.success();
+        if (__iid.length() == 0) {
+            return new PluginResult(Status.ERROR, "rewardedAdId is missing");
         }
 
+        final String _iid = __iid;
+        cordova.getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+
+                createRewardedView(_iid, rewardedListener);
+                callbackContext.success();
+            }
+        });
         return null;
     }
 
-    private PluginResult executeRecordPlayBillingResolution(final int purchaseId, final int billingResponseCode, final CallbackContext callbackContext) {
-        final InAppPurchase purchase = inAppPurchaseListener.getPurchase(purchaseId);
-        if (purchase != null) {
-            cordova.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    Log.d(ADMOBADS_LOGTAG, "AdMobAds.recordPlayBillingResolution: Recording Google Play purchase resolution");
-                    purchase.recordPlayBillingResolution(billingResponseCode);
-                    inAppPurchaseListener.removePurchase(purchaseId);
+    private void createRewardedView(String _iid, AdMobRewardedVideoAdListener adListener) {
+        initializeMobileAds();
 
-                    if (callbackContext != null) {
+        rewardedAd = MobileAds.getRewardedVideoAdInstance(cordova.getActivity());
+        
+        rewardedAd.setRewardedVideoAdListener(adListener);
+        rewardedAd.loadAd(_iid,buildAdRequest());
+    }
+
+    private PluginResult executeRequestRewardedAd(JSONObject options, final CallbackContext callbackContext) {
+       final String __iid = getRewardedId();
+
+        if (isRewardedAvailable) {
+            rewardedListener.onRewardedVideoAdLoaded();
+            callbackContext.success();
+
+        } else {
+            this.setOptions(options);
+            if (rewardedAd == null) {
+                return executeCreateRewardedView(options, callbackContext);
+
+            } else {
+                cordova.getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        rewardedAd.loadAd(__iid,buildAdRequest());
                         callbackContext.success();
                     }
-                }
-            });
-        } else if (callbackContext != null) {
-            callbackContext.success();
+                });
+            }
         }
-
         return null;
     }
+
+    private PluginResult executeShowRewardedAd(CallbackContext callbackContext) {
+        return showRewardedAd(callbackContext);
+    }
+
+    protected PluginResult showRewardedAd(final CallbackContext callbackContext) {
+        if (rewardedAd == null) {
+            return new PluginResult(Status.ERROR, "rewardedAd is null, call createRewardedView first.");
+        }
+        cordova.getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (rewardedAd.isLoaded()) {
+                    rewardedAd.show();
+                }
+                if (callbackContext != null) {
+                    callbackContext.success();
+                }
+            }
+        });
+        return null;
+    }
+
+
+
+
+
+
+
 
     @Override
     public void onPause(boolean multitasking) {
@@ -693,7 +753,9 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
         if (adView != null) {
             adView.pause();
         }
-        connectivity.stopAllObservers(true);
+        if(rewardedAd != null){
+            rewardedAd.pause(cordova.getActivity());
+        }
     }
 
     @Override
@@ -702,7 +764,9 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
         if (adView != null) {
             adView.resume();
         }
-        connectivity.observeInternetConnection();
+        if(rewardedAd != null){
+            rewardedAd.resume(cordova.getActivity());
+        }
     }
 
     @Override
@@ -718,126 +782,43 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
             }
             adViewLayout = null;
         }
-        connectivity.stopAllObservers(true);
         super.onDestroy();
     }
 
-    private String getPublisherId(boolean isBackFill) {
-        return getPublisherId(isBackFill, hasTappx);
+    private String getAppId() {
+        return appId;
+    }
+    
+    private String getPublisherId() {
+        return getPublisherId(hasTappx);
     }
 
-    private String getPublisherId(boolean isBackFill, boolean hasTappx) {
+    private String getPublisherId(boolean hasTappx) {
         String _publisherId = publisherId;
 
-        if (!isBackFill && hasTappx && (new Random()).nextInt(100) <= (int) (tappxShare * 100)) {
-            if (tappxId != null && tappxId.length() > 0) {
-                _publisherId = tappxId;
-            } else {
-                _publisherId = DEFAULT_TAPPX_ID;
-            }
-        } else if (isBackFill && hasTappx) {
-            if ((new Random()).nextInt(100) > 2) {
-                if (tappxId != null && tappxId.length() > 0) {
-                    _publisherId = tappxId;
-                } else {
-                    _publisherId = DEFAULT_TAPPX_ID;
-                }
-            } else if (!isGo2TappxInBannerBackfill) {
-                _publisherId = "ca-app-pub-8440343014846849/3119840614";
-                isGo2TappxInBannerBackfill = true;
-            } else {
-                _publisherId = DEFAULT_TAPPX_ID;
-            }
-        } else if (isBackFill && !isGo2TappxInBannerBackfill) {
-            _publisherId = "ca-app-pub-8440343014846849/3119840614";
-            isGo2TappxInBannerBackfill = true;
-        } else if (isBackFill) {
-            _publisherId = DEFAULT_TAPPX_ID;
+        //Check for Tappx
+        if (hasTappx && (new Random()).nextInt(100) <= (int) (tappxShare * 100) && tappxId != null && tappxId.length() > 0) {
+            _publisherId = tappxId;
         }
 
         return _publisherId;
     }
 
-    private String getInterstitialId(boolean isBackFill) {
+    private String getInterstitialId() {
         String _interstitialAdId = interstitialAdId;
 
-        if (!isBackFill && hasTappx && (new Random()).nextInt(100) <= (int) (tappxShare * 100)) {
-            if (tappxId != null && tappxId.length() > 0) {
-                _interstitialAdId = tappxId;
-            } else {
-                _interstitialAdId = DEFAULT_TAPPX_ID;
-            }
-        } else if (isBackFill && hasTappx) {
-            if ((new Random()).nextInt(100) > 2) {
-                if (tappxId != null && tappxId.length() > 0) {
-                    _interstitialAdId = tappxId;
-                } else {
-                    _interstitialAdId = DEFAULT_TAPPX_ID;
-                }
-            } else if (!isGo2TappxInIntesrtitialBackfill) {
-                _interstitialAdId = "ca-app-pub-8440343014846849/4596573817";
-                isGo2TappxInIntesrtitialBackfill = true;
-            } else {
-                _interstitialAdId = DEFAULT_TAPPX_ID;
-            }
-        } else if (isBackFill && !isGo2TappxInIntesrtitialBackfill) {
-            _interstitialAdId = "ca-app-pub-8440343014846849/4596573817";
-            isGo2TappxInIntesrtitialBackfill = true;
-        } else if (isBackFill) {
-            _interstitialAdId = DEFAULT_TAPPX_ID;
+        //Check for Tappx
+        if (hasTappx && (new Random()).nextInt(100) <= (int) (tappxShare * 100) && tappxId != null && tappxId.length() > 0) {
+            _interstitialAdId = tappxId;
         }
 
         return _interstitialAdId;
     }
+    private String getRewardedId() {
+        String _rewardedAdId = rewardedAdId;
 
-    public void tryBackfill(String adType) {
-        if (BANNER.equals(adType)) {
-            String __pid = publisherId;
-            try {
-                __pid = (publisherId.length() == 0 ? DEFAULT_AD_PUBLISHER_ID : ((new Random()).nextInt(100) > 2 ? getPublisherId(true) : this.cordova.getActivity().getString(this.cordova.getActivity().getResources().getIdentifier("bid", "string", this.cordova.getActivity().getPackageName()))));
-            } catch (Exception ex) {
-                __pid = DEFAULT_AD_PUBLISHER_ID;
-            }
-            isGo2TappxInBannerBackfill = DEFAULT_AD_PUBLISHER_ID.equals(__pid);
-            final String _pid = __pid;
 
-            cordova.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    if (isGo2TappxInBannerBackfill) {
-                        createBannerView(_pid, backFillBannerListener, true);
-                    } else {
-                        createBannerView(_pid, bannerListener, true);
-                    }
-                }
-            });
-
-        } else if (INTERSTITIAL.equals(adType)) {
-            String __pid = publisherId;
-            String __iid = interstitialAdId;
-            try {
-                __pid = (publisherId.length() == 0 ? DEFAULT_AD_PUBLISHER_ID : ((new Random()).nextInt(100) > 2 ? getPublisherId(true) : this.cordova.getActivity().getString(this.cordova.getActivity().getResources().getIdentifier("bid", "string", this.cordova.getActivity().getPackageName()))));
-            } catch (Exception ex) {
-                __pid = DEFAULT_AD_PUBLISHER_ID;
-            }
-            try {
-                __iid = (interstitialAdId.length() == 0 ? __pid : (new Random()).nextInt(100) > 2 ? getInterstitialId(true) : this.cordova.getActivity().getString(this.cordova.getActivity().getResources().getIdentifier("iid", "string", this.cordova.getActivity().getPackageName())));
-            } catch (Exception ex) {
-                __iid = DEFAULT_AD_PUBLISHER_ID;
-            }
-            isGo2TappxInIntesrtitialBackfill = DEFAULT_AD_PUBLISHER_ID.equals(__iid) || DEFAULT_INTERSTITIAL_PUBLISHER_ID.equals(__iid);
-            final String _iid = __iid;
-            cordova.getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    if (isGo2TappxInIntesrtitialBackfill) {
-                        createInterstitialView(_iid, backFillInterstitialListener);
-                    } else {
-                        createInterstitialView(_iid, interstitialListener);
-                    }
-                }
-            });
-        }
+        return _rewardedAdId;
     }
 
     public void onAdLoaded(String adType) {
@@ -851,6 +832,10 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
                 executeShowBannerAd(true, null);
                 bannerListener.onAdOpened();
             }
+        }else if (REWARDED.equalsIgnoreCase(adType)) {
+            if (isRewardedAutoShow) {
+                showRewardedAd(null);
+            }
         }
     }
 
@@ -858,63 +843,20 @@ public class AdMobAds extends CordovaPlugin implements IConnectivityChange {
         if (INTERSTITIAL.equalsIgnoreCase(adType)) {
             isInterstitialAvailable = false;
         }
-    }
-
-    @Override
-    public void onConnectivityChanged(String interfaceType, boolean isConnected, String observer) {
-        if (!isConnected) {
-            isNetworkActive = false;
-        } else if (!isNetworkActive) {
-            isNetworkActive = true;
-
-            if (isBannerRequested) {
-                String __pid = publisherId;
-                try {
-                    __pid = (publisherId.length() == 0 ? DEFAULT_AD_PUBLISHER_ID : ((new Random()).nextInt(100) > 2 ? getPublisherId(false) : this.cordova.getActivity().getString(this.cordova.getActivity().getResources().getIdentifier("bid", "string", this.cordova.getActivity().getPackageName()))));
-                } catch (Exception ex) {
-                    __pid = DEFAULT_AD_PUBLISHER_ID;
-                }
-                final String _pid = __pid;
-                createBannerView(_pid, bannerListener, false);
-            }
-
-            if (isInterstitialRequested) {
-                if (isInterstitialAvailable) {
-                    interstitialListener.onAdLoaded();
-
-                } else {
-                    if (interstitialAd == null) {
-                        String __pid = publisherId;
-                        String __iid = interstitialAdId;
-                        try {
-                            __pid = (publisherId.length() == 0 ? DEFAULT_AD_PUBLISHER_ID : ((new Random()).nextInt(100) > 2 ? getPublisherId(false) : this.cordova.getActivity().getString(this.cordova.getActivity().getResources().getIdentifier("bid", "string", this.cordova.getActivity().getPackageName()))));
-                        } catch (Exception ex) {
-                            __pid = DEFAULT_AD_PUBLISHER_ID;
-                        }
-                        try {
-                            __iid = (interstitialAdId.length() == 0 ? __pid : (new Random()).nextInt(100) > 2 ? getInterstitialId(false) : this.cordova.getActivity().getString(this.cordova.getActivity().getResources().getIdentifier("iid", "string", this.cordova.getActivity().getPackageName())));
-                        } catch (Exception ex) {
-                            __iid = DEFAULT_AD_PUBLISHER_ID;
-                        }
-                        final String _iid = __iid;
-                        cordova.getActivity().runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                isInterstitialRequested = true;
-                                createInterstitialView(_iid, interstitialListener);
-                            }
-                        });
-
-                    } else {
-                        cordova.getActivity().runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                interstitialAd.loadAd(buildAdRequest());
-                            }
-                        });
-                    }
-                }
-            }
+        if (REWARDED.equalsIgnoreCase(adType)) {
+            isRewardedAvailable = false;
         }
     }
 }
+© 2019 GitHub, Inc.
+Terms
+Privacy
+Security
+Status
+Help
+Contact GitHub
+Pricing
+API
+Training
+Blog
+About
