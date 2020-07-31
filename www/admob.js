@@ -64,8 +64,8 @@ admob.PURCHASE_RESOLUTION = {
 
 // This is not used by the plugin, it is just a helper to show how options are specified and their default values
 admob.options = {
-  publisherId: (/(android)/i.test(navigator.userAgent)) ? "ca-app-pub-8440343014846849/3119840614" : "ca-app-pub-8440343014846849/2335511010",
-  interstitialId: (/(android)/i.test(navigator.userAgent)) ? "ca-app-pub-8440343014846849/4596573817" : "ca-app-pub-8440343014846849/3812244218",
+  publisherId: (/(android)/i.test(navigator.userAgent)) ? "ca-app-pub-9718633180389415~4221754451" : "ca-app-pub-9718633180389415~4221754451",
+  interstitialId: (/(android)/i.test(navigator.userAgent)) ? "ca-app-pub-9718633180389415/8719402660" : "ca-app-pub-9718633180389415/7431399393",
   adSize: admob.AD_SIZE.SMART_BANNER,
   bannerAtTop: false,
   overlap: false,
